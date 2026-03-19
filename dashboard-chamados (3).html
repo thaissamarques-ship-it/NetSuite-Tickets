@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetSuite Tickets · Finance</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  /* ── CONFIG ────────────────────────────────────────── */
+  :root {
+    --bg:        #F7F6F3;
+    --surface:   #FFFFFF;
+    --border:    #E4E2DC;
+    --border2:   #CBC9C1;
+    --text:      #1A1916;
+    --muted:     #767370;
+    --hint:      #AEACA7;
+    --accent:    #1A1916;
+    --info-bg:   #EBF2FF;
+    --info-text: #1A4FAD;
+    --warn-bg:   #FFF4E0;
+    --warn-text: #8A5200;
+    --danger-bg: #FFEAEA;
+    --danger-text:#961F1F;
+    --ok-bg:     #EDFAF3;
+    --ok-text:   #1A6640;
+    --radius:    10px;
+    --radius-sm: 6px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── LAYOUT ────────────────────────────────────────── */
+  .app { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* ── TOPBAR ─────────────────────────────────────────── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px; gap: 12px; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-logo {
+    width: 38px; height: 38px; background: var(--text);
+    border-radius: var(--radius-sm); display: flex;
+    align-items: center; justify-content: center;
+  }
+  .brand-logo svg { width: 20px; height: 20px; }
+  .brand-name { font-size: 16px; font-weight: 600; letter-spacing: -.3px; }
+  .brand-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+  .topbar-right { display: flex; gap: 8px; align-items: center; }
+
+  /* ── BUTTONS ─────────────────────────────────────────── */
+  .btn {
+    padding: 8px 16px; font-size: 13px; font-family: inherit;
+    border-radius: var(--radius-sm); border: 1px solid var(--border2);
+    background: var(--surface); color: var(--text); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all .15s; font-weight: 500;
+  }
+  .btn:hover { background: var(--bg); }
+  .btn-primary {
+    background: var(--text); color: #fff; border-color: var(--text);
+  }
+  .btn-primary:hover { opacity: .85; background: var(--text); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ── TOAST ───────────────────────────────────────────── */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .toast-item {
+    background: var(--text); color: #fff; padding: 10px 16px;
+    border-radius: var(--radius); font-size: 13px;
+    animation: slideIn .2s ease; pointer-events: auto;
+    display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  }
+  .toast-item.success { background: #1A6640; }
+  .toast-item.error   { background: #961F1F; }
+  @keyframes slideIn { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* ── METRICS ─────────────────────────────────────────── */
+  .metrics {
+    display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 10px; margin-bottom: 24px;
+  }
+  .metric {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+  }
+  .metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .05em; margin-bottom: 6px; font-weight: 500; }
+  .metric-value { font-size: 26px; font-weight: 600; letter-spacing: -.5px; }
+  .mv-all  { color: var(--text); }
+  .mv-open { color: var(--warn-text); }
+  .mv-pend { color: var(--danger-text); }
+  .mv-ok   { color: var(--ok-text); }
+
+  /* ── FILTERS ─────────────────────────────────────────── */
+  .toolbar {
+    display: flex; gap: 8px; margin-bottom: 16px;
+    flex-wrap: wrap; align-items: center;
+  }
+  .chip {
+    padding: 5px 14px; font-size: 12px; border-radius: 20px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--muted); cursor: pointer; transition: all .15s;
+    font-family: inherit; font-weight: 500;
+  }
+  .chip.active { background: var(--text); color: #fff; border-color: var(--text); }
+  .chip:hover:not(.active) { border-color: var(--border2); color: var(--text); }
+  .search {
+    margin-left: auto; padding: 6px 12px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); color: var(--text);
+    font-family: inherit; outline: none; width: 200px;
+  }
+  .search:focus { border-color: var(--border2); }
+
+  /* ── TABLE ───────────────────────────────────────────── */
+  .table-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-align: left; padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg); text-transform: uppercase; letter-spacing: .04em;
+  }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg); }
+  .empty-row { text-align: center; padding: 3rem; color: var(--muted); font-size: 13px; }
+
+  /* ── BADGES ──────────────────────────────────────────── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600;
+  }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .b-aberto   { background: var(--warn-bg);   color: var(--warn-text); }
+  .b-pendente { background: var(--danger-bg); color: var(--danger-text); }
+  .b-resolvido{ background: var(--ok-bg);     color: var(--ok-text); }
+  .b-alta     { background: var(--danger-bg); color: var(--danger-text); }
+  .b-media    { background: var(--warn-bg);   color: var(--warn-text); }
+  .b-baixa    { background: var(--bg);        color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── AVATAR ──────────────────────────────────────────── */
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; background: var(--info-bg);
+    color: var(--info-text); flex-shrink: 0;
+  }
+  .assignee { display: flex; align-items: center; gap: 8px; }
+
+  /* ── ROW ACTIONS ─────────────────────────────────────── */
+  .row-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+  tr:hover .row-actions { opacity: 1; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: transparent;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; transition: background .15s;
+  }
+  .icon-btn:hover { background: var(--bg); }
+
+  /* ── LOADING ─────────────────────────────────────────── */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 3rem; color: var(--muted); font-size: 13px;
+  }
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid var(--border);
+    border-top-color: var(--text); border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── MODAL ───────────────────────────────────────────── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    z-index: 1000; display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .modal {
+    background: var(--surface); border-radius: var(--radius);
+    border: 1px solid var(--border); width: 100%; max-width: 520px;
+    padding: 24px; position: relative; max-height: 90vh; overflow-y: auto;
+  }
+  .modal-close {
+    position: absolute; top: 16px; right: 16px;
+    background: none; border: none; font-size: 20px; cursor: pointer;
+    color: var(--muted); line-height: 1;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal h2 { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+
+  /* ── FORM ────────────────────────────────────────────── */
+  .form-group { margin-bottom: 14px; }
+  .form-group label {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em;
+    display: block; margin-bottom: 5px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%; padding: 9px 12px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg); color: var(--text);
+    font-family: inherit; outline: none; transition: border .15s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus { border-color: var(--border2); background: var(--surface); }
+  .form-group textarea { resize: vertical; min-height: 80px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+  /* ── DETAIL MODAL ─────────────────────────────────────── */
+  .detail-modal { max-width: 580px; }
+  .detail-section { margin-bottom: 18px; }
+  .detail-section h3 {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+  }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .detail-item label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .detail-item p { font-size: 13px; font-weight: 500; }
+  .timeline { border-left: 2px solid var(--border); padding-left: 14px; }
+  .tl-item { position: relative; font-size: 12px; padding-bottom: 10px; }
+  .tl-item::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border2); position: absolute; left: -19px; top: 3px;
+  }
+  .tl-time { color: var(--muted); margin-bottom: 1px; font-size: 11px; }
+
+  /* ── SLACK NOTIF ──────────────────────────────────────── */
+  .slack-bar {
+    background: #F8F0FF; border-left: 3px solid #4A154B;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: 10px 14px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px; font-size: 13px;
+  }
+  .slack-bar strong { font-weight: 600; }
+  .slack-dismiss {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    font-size: 18px; color: var(--muted);
+  }
+
+  /* ── RESPONSIVE ───────────────────────────────────────── */
+  @media (max-width: 640px) {
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .form-row { grid-template-columns: 1fr; }
+    .topbar { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<!-- Slack notification bar -->
+<div class="slack-bar" id="slack-bar" style="display:none; max-width:1100px; margin: 20px auto 0; border-radius: var(--radius-sm);">
+  <span>💬</span>
+  <span><strong>#netsuite-chamados</strong> — <span id="slack-bar-msg"></span></span>
+  <button class="slack-dismiss" onclick="document.getElementById('slack-bar').style.display='none'">×</button>
+</div>
+
+<div class="app">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+          <rect x="9" y="3" width="6" height="4" rx="1"/>
+          <path d="M9 12h6M9 16h4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">NetSuite Tickets</div>
+        <div class="brand-sub">Finance Panel</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <a href="slack://channel?team=TBGSSSHEJ&id=C0AM7T2MJQP" class="btn">💬 Open Slack</a>
+      <button class="btn btn-primary" onclick="openNewModal()">+ New ticket</button>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">Total</div>
+      <div class="metric-value mv-all" id="m-total">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Open</div>
+      <div class="metric-value mv-open" id="m-open">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Pending</div>
+      <div class="metric-value mv-pend" id="m-pend">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Resolved</div>
+      <div class="metric-value mv-ok" id="m-done">—</div>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button class="chip active" onclick="setFilter('todos', this)">All</button>
+    <button class="chip" onclick="setFilter('aberto', this)">Open</button>
+    <button class="chip" onclick="setFilter('pendente', this)">Pending</button>
+    <button class="chip" onclick="setFilter('resolvido', this)">Resolved</button>
+    <button class="chip" onclick="setFilter('alta', this)">High priority</button>
+    <input class="search" type="text" placeholder="Search..." id="search-input" oninput="renderTable()">
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:60px">ID</th>
+          <th>Description</th>
+          <th style="width:100px">Priority</th>
+          <th style="width:130px">Assignee</th>
+          <th style="width:110px">Status</th>
+          <th style="width:95px">Date</th>
+          <th style="width:90px"></th>
+        </tr>
+      </thead>
+      <tbody id="table-body">
+        <tr><td colspan="7"><div class="loading"><div class="spinner"></div> Loading tickets...</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Novo Chamado -->
+<div class="modal-overlay" id="new-modal" style="display:none">
+  <div class="modal">
+    <button class="modal-close" onclick="closeNewModal()">×</button>
+    <h2>New Ticket</h2>
+    <div class="form-group">
+      <label>Problem description *</label>
+      <input type="text" id="f-desc" placeholder="e.g. Error closing accounting period for February">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Error / issue type</label>
+        <select id="f-tipo">
+          <option>Calculation of tax not performed</option>
+          <option>Creation of new item</option>
+          <option>Create Supplier</option>
+          <option>Duplicate PO/Invoice</option>
+          <option>Others</option>
+          <option>Pending proof of payment</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="f-prio">
+          <option value="alta">🔴 High</option>
+          <option value="media" selected>🟡 Medium</option>
+          <option value="baixa">🟢 Low</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Details / context</label>
+      <textarea id="f-detail" placeholder="Describe the issue in more detail: affected module, period, error message displayed in NetSuite..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Attachment (file name)</label>
+      <input type="text" id="f-anexo" placeholder="e.g. error_screenshot.png">
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeNewModal()">Cancel</button>
+      <button class="btn btn-primary" id="submit-btn" onclick="submitTicket()">
+        Open ticket + notify Slack
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Detalhe do Chamado -->
+<div class="modal-overlay" id="detail-modal" style="display:none">
+  <div class="modal detail-modal">
+    <button class="modal-close" onclick="closeDetail()">×</button>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<script>
+/* ── CONFIGURAÇÃO ─────────────────────────────────────────── */
+const SUPABASE_URL    = 'https://otfkwaureahkphubdpum.supabase.co';
+const SUPABASE_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90Zmt3YXVyZWFoa3BodWJkcHVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MzczOTMsImV4cCI6MjA4OTUxMzM5M30.i1pveSLbU1eKiu4dXsLGf3aF_Hg4Y0HAgenBM7BmJ2A'; // ← cole aqui a anon key do Supabase
+const SLACK_WEBHOOK = ''; // cole sua URL do Slack aqui localmente
+
+/* ── INICIALIZAÇÃO SUPABASE ───────────────────────────────── */
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+/* ── ESTADO ───────────────────────────────────────────────── */
+let allTickets = [];
+let filterStatus = 'todos';
+
+/* ── TOAST ────────────────────────────────────────────────── */
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = `toast-item ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+/* ── CARREGAR CHAMADOS ────────────────────────────────────── */
+async function loadTickets() {
+  const { data, error } = await db
+    .from('chamados')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    toast('Error loading tickets: ' + error.message, 'error');
+    document.getElementById('table-body').innerHTML =
+      `<tr><td colspan="7"><div class="empty-row">Failed to connect to the database.<br><small style="color:var(--muted)">${error.message}</small></div></td></tr>`;
+    return;
+  }
+
+  allTickets = data || [];
+  renderTable();
+}
+
+/* ── RENDERIZAR TABELA ────────────────────────────────────── */
+function renderTable() {
+  const q = (document.getElementById('search-input').value || '').toLowerCase();
+
+  let rows = allTickets.filter(t => {
+    if (filterStatus === 'alta')    return t.prioridade === 'alta';
+    if (filterStatus !== 'todos')   return t.status === filterStatus;
+    return true;
+  }).filter(t =>
+    !q ||
+    (t.descricao || '').toLowerCase().includes(q) ||
+    (t.tipo || '').toLowerCase().includes(q) ||
+    (t.responsavel || '').toLowerCase().includes(q)
+  );
+
+  // Métricas
+  document.getElementById('m-total').textContent = allTickets.length;
+  document.getElementById('m-open').textContent  = allTickets.filter(t => t.status === 'aberto').length;
+  document.getElementById('m-pend').textContent  = allTickets.filter(t => t.status === 'pendente').length;
+  document.getElementById('m-done').textContent  = allTickets.filter(t => t.status === 'resolvido').length;
+
+  const tbody = document.getElementById('table-body');
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-row">No tickets found.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(t => {
+    const initials = (t.responsavel || 'NA')
+      .split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+    const date = t.created_at
+      ? new Date(t.created_at).toLocaleDateString('pt-BR')
+      : '—';
+
+    return `<tr>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">${String(t.id).slice(-4).padStart(4,'0')}</td>
+      <td>
+        <div style="font-weight:500;margin-bottom:2px">${t.descricao || '—'}</div>
+        <div style="font-size:11px;color:var(--muted)">${t.tipo || ''}</div>
+      </td>
+      <td><span class="badge b-${t.prioridade || 'baixa'}">${prioBadgeDot(t.prioridade)} ${cap(t.prioridade)}</span></td>
+      <td>
+        <div class="assignee">
+          <div class="avatar">${initials}</div>
+          <span style="font-size:12px">${t.responsavel || '—'}</span>
+        </div>
+      </td>
+      <td><span class="badge b-${t.status || 'aberto'}">${statusDot(t.status)} ${cap(t.status)}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${date}</td>
+      <td>
+        <div class="row-actions">
+          <button class="icon-btn" title="View details" onclick="openDetail('${t.id}')">👁</button>
+          <button class="icon-btn" title="Mark as resolved" onclick="resolveTicket('${t.id}')">✓</button>
+          <button class="icon-btn" title="Send to Slack" onclick="sendSlack(${JSON.stringify(t).split('"').join('&quot;')})">💬</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function prioBadgeDot(p) {
+  return p === 'alta' ? '🔴' : p === 'media' ? '🟡' : '🟢';
+}
+function statusDot(s) {
+  return s === 'resolvido' ? '✅' : s === 'pendente' ? '⏳' : '🆕';
+}
+function cap(str) {
+  if (!str) return '—';
+  const map = {
+    'aberto': 'Open', 'pendente': 'Pending', 'resolvido': 'Resolved',
+    'alta': 'High', 'media': 'Medium', 'baixa': 'Low',
+    'Não atribuído': 'Unassigned'
+  };
+  return map[str] || str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/* ── FILTROS ──────────────────────────────────────────────── */
+function setFilter(f, el) {
+  filterStatus = f;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderTable();
+}
+
+/* ── ABRIR CHAMADO ────────────────────────────────────────── */
+function openNewModal() { document.getElementById('new-modal').style.display = 'flex'; }
+function closeNewModal() { document.getElementById('new-modal').style.display = 'none'; }
+
+async function submitTicket() {
+  const desc = document.getElementById('f-desc').value.trim();
+  if (!desc) { toast('Please fill in the ticket description.', 'error'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  const newTicket = {
+    descricao:    desc,
+    tipo:         document.getElementById('f-tipo').value,
+    prioridade:   document.getElementById('f-prio').value,
+    responsavel:  'Não atribuído',
+    detalhe:      document.getElementById('f-detail').value || '',
+    anexo:        document.getElementById('f-anexo').value || '',
+    status:       'aberto',
+  };
+
+  const { data, error } = await db.from('chamados').insert([newTicket]).select();
+
+  if (error) {
+    toast('Error saving ticket: ' + error.message, 'error');
+    btn.disabled = false; btn.textContent = 'Open ticket + notify Slack';
+    return;
+  }
+
+  toast('Ticket opened successfully!', 'success');
+  closeNewModal();
+
+  // Clear form
+  ['f-desc','f-detail','f-anexo'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-prio').value = 'media';
+
+  btn.disabled = false;
+  btn.textContent = 'Open ticket + notify Slack';
+
+  // Recarregar e notificar Slack
+  await loadTickets();
+  if (data && data[0]) sendSlack(data[0]);
+}
+
+/* ── RESOLVER CHAMADO ─────────────────────────────────────── */
+async function resolveTicket(id) {
+  const { error } = await db
+    .from('chamados')
+    .update({ status: 'resolvido' })
+    .eq('id', id);
+
+  if (error) { toast('Error updating: ' + error.message, 'error'); return; }
+  toast('Ticket marked as resolved ✓', 'success');
+  await loadTickets();
+}
+
+/* ── ALTERAR STATUS / RESPONSÁVEL ─────────────────────────── */
+async function updateField(id, field, value) {
+  const { error } = await db
+    .from('chamados')
+    .update({ [field]: value })
+    .eq('id', id);
+
+  if (error) { toast('Error updating field.', 'error'); return; }
+  toast('Updated!', 'success');
+  await loadTickets();
+}
+
+/* ── DETALHE DO CHAMADO ───────────────────────────────────── */
+function openDetail(id) {
+  const t = allTickets.find(x => String(x.id) === String(id));
+  if (!t) return;
+
+  const date = t.created_at
+    ? new Date(t.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+    : '—';
+
+  document.getElementById('detail-content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">#${String(t.id).slice(-4).padStart(4,'0')}</span>
+      <span class="badge b-${t.status}">${statusDot(t.status)} ${cap(t.status)}</span>
+      <span class="badge b-${t.prioridade}" style="margin-left:auto">${prioBadgeDot(t.prioridade)} ${cap(t.prioridade)}</span>
+    </div>
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:16px;line-height:1.4">${t.descricao}</h2>
+
+    <div class="detail-section">
+      <h3>Information</h3>
+      <div class="detail-grid">
+        <div class="detail-item"><label>Type</label><p>${t.tipo || '—'}</p></div>
+        <div class="detail-item"><label>Opened on</label><p>${date}</p></div>
+        <div class="detail-item"><label>Attachment</label>
+          <p style="color:${t.anexo ? 'var(--info-text)' : 'var(--muted)'}">${t.anexo || 'None'}</p>
+        </div>
+        <div class="detail-item"><label>Internal ID</label>
+          <p style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">${t.id}</p>
+        </div>
+      </div>
+    </div>
+
+    ${t.detalhe ? `
+    <div class="detail-section">
+      <h3>Detailed description</h3>
+      <p style="font-size:13px;color:var(--muted);line-height:1.6">${t.detalhe}</p>
+    </div>` : ''}
+
+    <div class="detail-section">
+      <h3>Manage</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Assignee</label>
+          <select onchange="updateField('${t.id}','responsavel',this.value)"
+            style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-family:inherit;outline:none">
+            <option value="Não atribuído" ${t.responsavel==='Não atribuído'?'selected':''}>Unassigned</option>
+            <option ${t.responsavel==='Thaissa Marques'?'selected':''}>Thaissa Marques</option>
+            <option ${t.responsavel==='Larissa Montenegro'?'selected':''}>Larissa Montenegro</option>
+            <option ${t.responsavel==='Jorge Correa'?'selected':''}>Jorge Correa</option>
+            <option ${t.responsavel==='Maiu'?'selected':''}>Maiu</option>
+            <option ${t.responsavel==='Oracle'?'selected':''}>Oracle</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Status</label>
+          <select onchange="updateField('${t.id}','status',this.value)"
+            style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-family:inherit;outline:none">
+            <option value="aberto"    ${t.status==='aberto'?'selected':''}>🆕 Open</option>
+            <option value="pendente"  ${t.status==='pendente'?'selected':''}>⏳ Pending</option>
+            <option value="resolvido" ${t.status==='resolvido'?'selected':''}>✅ Resolved</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn" onclick="closeDetail()">Close</button>
+      <button class="btn btn-primary" onclick="sendSlack(${JSON.stringify(t).split('"').join('&quot;')});closeDetail()">
+        💬 Notify Slack
+      </button>
+    </div>
+  `;
+  document.getElementById('detail-modal').style.display = 'flex';
+}
+function closeDetail() { document.getElementById('detail-modal').style.display = 'none'; }
+
+/* ── SLACK WEBHOOK ────────────────────────────────────────── */
+async function sendSlack(t) {
+  const prioEmoji = t.prioridade === 'alta' ? '🔴' : t.prioridade === 'media' ? '🟡' : '🟢';
+  const statEmoji = t.status === 'resolvido' ? '✅' : t.status === 'pendente' ? '⏳' : '🆕';
+  const date = t.created_at
+    ? new Date(t.created_at).toLocaleDateString('pt-BR')
+    : new Date().toLocaleDateString('pt-BR');
+
+  const msg = {
+    text: `📋 *Chamado NetSuite #${String(t.id).slice(-4).padStart(4,'0')}*`,
+    blocks: [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: `📋 Chamado NetSuite #${String(t.id).slice(-4).padStart(4,'0')}` }
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Description:*\n${t.descricao}` },
+          { type: 'mrkdwn', text: `*Type:*\n${t.tipo || '—'}` },
+          { type: 'mrkdwn', text: `${prioEmoji} *Priority:* ${cap(t.prioridade)}` },
+          { type: 'mrkdwn', text: `${statEmoji} *Status:* ${cap(t.status)}` },
+          { type: 'mrkdwn', text: `*Assignee:*\n${t.responsavel === 'Não atribuído' ? 'Unassigned' : (t.responsavel || 'Unassigned')}` },
+          { type: 'mrkdwn', text: `*Opened on:*\n${date}` },
+        ]
+      },
+      ...(t.detalhe ? [{
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Detalhes:*\n${t.detalhe}` }
+      }] : []),
+      {
+        type: 'divider'
+      },
+      {
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: 'Sent from the *NetSuite Tickets · Finance* panel' }]
+      }
+    ]
+  };
+
+  try {
+    // Nota: em produção, o envio ao Slack deve passar por um backend para evitar
+    // exposição do webhook. Esta chamada pode ser bloqueada por CORS no navegador.
+    // Solução recomendada: criar uma Supabase Edge Function como proxy.
+    await fetch(SLACK_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(msg),
+      mode: 'no-cors'
+    });
+    toast('Notificação enviada ao Slack! 💬', 'success');
+
+    // Mostrar barra de aviso
+    const bar = document.getElementById('slack-bar');
+    document.getElementById('slack-bar-msg').textContent =
+      `${prioEmoji} Chamado aberto — ${t.descricao} (${cap(t.prioridade)})`;
+    bar.style.display = 'flex';
+  } catch (e) {
+    toast('Erro ao notificar o Slack.', 'error');
+  }
+}
+
+/* ── REALTIME (atualização automática) ───────────────────── */
+db.channel('chamados-changes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'chamados' }, () => {
+    loadTickets();
+  })
+  .subscribe();
+
+/* ── INIT ─────────────────────────────────────────────────── */
+loadTickets();
+</script>
+</body>
+</html>
