@@ -417,7 +417,7 @@
 /* ── CONFIGURAÇÃO ─────────────────────────────────────────── */
 const SUPABASE_URL    = 'https://otfkwaureahkphubdpum.supabase.co';
 const SUPABASE_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90Zmt3YXVyZWFoa3BodWJkcHVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MzczOTMsImV4cCI6MjA4OTUxMzM5M30.i1pveSLbU1eKiu4dXsLGf3aF_Hg4Y0HAgenBM7BmJ2A'; // ← cole aqui a anon key do Supabase
-const SLACK_WEBHOOK = ''; // cole sua URL do Slack aqui localmente
+const SLACK_PROXY = 'https://otfkwaureahkphubdpum.supabase.co/functions/v1/slack-notify';
 
 /* ── INICIALIZAÇÃO SUPABASE ───────────────────────────────── */
 const { createClient } = supabase;
@@ -482,15 +482,16 @@ function renderTable() {
     return;
   }
 
-  tbody.innerHTML = rows.map(t => {
+  tbody.innerHTML = rows.map((t, idx) => {
     const initials = (t.responsavel || 'NA')
       .split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
     const date = t.created_at
       ? new Date(t.created_at).toLocaleDateString('pt-BR')
       : '—';
+    const ticketNum = String(t.ticket_number || (allTickets.length - allTickets.indexOf(t))).padStart(4,'0');
 
     return `<tr>
-      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">${String(t.id).slice(-4).padStart(4,'0')}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">#${ticketNum}</td>
       <td>
         <div style="font-weight:500;margin-bottom:2px">${t.descricao || '—'}</div>
         <div style="font-size:11px;color:var(--muted)">${t.tipo || ''}</div>
@@ -499,7 +500,7 @@ function renderTable() {
       <td>
         <div class="assignee">
           <div class="avatar">${initials}</div>
-          <span style="font-size:12px">${t.responsavel || '—'}</span>
+          <span style="font-size:12px">${t.responsavel === 'Não atribuído' ? 'Unassigned' : (t.responsavel || 'Unassigned')}</span>
         </div>
       </td>
       <td><span class="badge b-${t.status || 'aberto'}">${statusDot(t.status)} ${cap(t.status)}</span></td>
@@ -509,6 +510,7 @@ function renderTable() {
           <button class="icon-btn" title="View details" onclick="openDetail('${t.id}')">👁</button>
           <button class="icon-btn" title="Mark as resolved" onclick="resolveTicket('${t.id}')">✓</button>
           <button class="icon-btn" title="Send to Slack" onclick="sendSlack(${JSON.stringify(t).split('"').join('&quot;')})">💬</button>
+          <button class="icon-btn" title="Delete ticket" onclick="deleteTicket('${t.id}')" style="color:var(--danger-text)">🗑</button>
         </div>
       </td>
     </tr>`;
@@ -596,7 +598,15 @@ async function resolveTicket(id) {
   await loadTickets();
 }
 
-/* ── ALTERAR STATUS / RESPONSÁVEL ─────────────────────────── */
+/* ── EXCLUIR CHAMADO ──────────────────────────────────────── */
+async function deleteTicket(id) {
+  if (!confirm('Are you sure you want to delete this ticket? This action cannot be undone.')) return;
+  const { error } = await db.from('chamados').delete().eq('id', id);
+  if (error) { toast('Error deleting ticket: ' + error.message, 'error'); return; }
+  toast('Ticket deleted.', 'success');
+  closeDetail();
+  await loadTickets();
+}
 async function updateField(id, field, value) {
   const { error } = await db
     .from('chamados')
@@ -619,7 +629,7 @@ function openDetail(id) {
 
   document.getElementById('detail-content').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">#${String(t.id).slice(-4).padStart(4,'0')}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">#${String(t.ticket_number || '').padStart(4,'0')}</span>
       <span class="badge b-${t.status}">${statusDot(t.status)} ${cap(t.status)}</span>
       <span class="badge b-${t.prioridade}" style="margin-left:auto">${prioBadgeDot(t.prioridade)} ${cap(t.prioridade)}</span>
     </div>
@@ -673,6 +683,7 @@ function openDetail(id) {
     </div>
 
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn" onclick="deleteTicket('${t.id}')" style="color:var(--danger-text);border-color:var(--danger-text)">🗑 Delete</button>
       <button class="btn" onclick="closeDetail()">Close</button>
       <button class="btn btn-primary" onclick="sendSlack(${JSON.stringify(t).split('"').join('&quot;')});closeDetail()">
         💬 Notify Slack
@@ -691,12 +702,13 @@ async function sendSlack(t) {
     ? new Date(t.created_at).toLocaleDateString('pt-BR')
     : new Date().toLocaleDateString('pt-BR');
 
+  const ticketNum = String(t.ticket_number || '').padStart(4,'0');
   const msg = {
-    text: `📋 *Chamado NetSuite #${String(t.id).slice(-4).padStart(4,'0')}*`,
+    text: `📋 *New NetSuite Ticket #${ticketNum}*`,
     blocks: [
       {
         type: 'header',
-        text: { type: 'plain_text', text: `📋 Chamado NetSuite #${String(t.id).slice(-4).padStart(4,'0')}` }
+        text: { type: 'plain_text', text: `📋 New NetSuite Ticket #${ticketNum}` }
       },
       {
         type: 'section',
@@ -727,7 +739,7 @@ async function sendSlack(t) {
     // Nota: em produção, o envio ao Slack deve passar por um backend para evitar
     // exposição do webhook. Esta chamada pode ser bloqueada por CORS no navegador.
     // Solução recomendada: criar uma Supabase Edge Function como proxy.
-    await fetch(SLACK_WEBHOOK, {
+    await fetch(SLACK_PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(msg),
