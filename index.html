@@ -615,6 +615,28 @@ async function updateField(id, field, value) {
 
   if (error) { toast('Error updating field.', 'error'); return; }
   toast('Updated!', 'success');
+
+  // Se mudou o responsável, envia DM no Slack
+  if (field === 'responsavel' && value && value !== 'Não atribuído') {
+    const ticket = allTickets.find(t => String(t.id) === String(id));
+    if (ticket) {
+      try {
+        await fetch('https://otfkwaureahkphubdpum.supabase.co/functions/v1/slack-dm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            responsavel:   value,
+            ticket_number: ticket.ticket_number,
+            descricao:     ticket.descricao,
+            tipo:          ticket.tipo,
+            prioridade:    ticket.prioridade,
+            detalhe:       ticket.detalhe || '',
+          })
+        });
+      } catch(e) { console.log('DM error:', e); }
+    }
+  }
+
   await loadTickets();
 }
 
